@@ -187,3 +187,12 @@ class CoffeePressButton(Kitchen):
 
         turned_on = self.coffee_machine.get_state()["turned_on"]
         return turned_on and gripper_button_far
+
+    def reward(self, actions=None):
+        reward = 0.0
+        if self._check_success():
+            reward = 1.0
+
+        if self.reward_scale is not None:
+            reward *= self.reward_scale / 1.0
+        return reward
