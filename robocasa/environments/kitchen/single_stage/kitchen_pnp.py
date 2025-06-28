@@ -20,6 +20,15 @@ class PnP(Kitchen):
     def _get_obj_cfgs(self):
         raise NotImplementedError
 
+    def reward(self, actions=None):
+        reward = 0.0
+        if self._check_success():
+            reward = 1.0
+
+        if self.reward_scale is not None:
+            reward *= self.reward_scale / 1.0
+        return reward
+
 
 class PnPCounterToCab(PnP):
     """
