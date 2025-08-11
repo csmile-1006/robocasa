@@ -12,6 +12,17 @@ from tqdm import tqdm
 # from libero.libero.envs import OffScreenRenderEnv, SubprocVectorEnv, DummyVectorEnv
 from robocasa.lifelong.utils import *
 from robocasa.utils.env_utils import load_robocasa_gym_env
+from robocasa.utils.dataset_registry import SINGLE_STAGE_TASK_DATASETS, MULTI_STAGE_TASK_DATASETS
+
+
+def get_env_horizon(env_name):
+    if env_name in SINGLE_STAGE_TASK_DATASETS:
+        ds_config = SINGLE_STAGE_TASK_DATASETS[env_name]
+    elif env_name in MULTI_STAGE_TASK_DATASETS:
+        ds_config = MULTI_STAGE_TASK_DATASETS[env_name]
+    else:
+        raise ValueError(f"Environment {env_name} not found in dataset registry")
+    return ds_config["horizon"]
 
 
 def raw_obs_to_tensor_obs(obs, task_emb, cfg):
@@ -87,6 +98,7 @@ def evaluate_one_task_success(cfg, algo, task_name):
         # init_states_path = os.path.join(cfg.init_states_folder, task.problem_folder, task.init_states_file)
         # init_states = torch.load(init_states_path)
         num_success = 0
+        max_steps = get_env_horizon(task_name)
         for i in range(eval_loop_num):
             env.reset()
             task_emb = env.language_instruction
@@ -103,7 +115,7 @@ def evaluate_one_task_success(cfg, algo, task_name):
             # for _ in range(5):
             #     obs, _, _, _ = env.step(dummy)
 
-            while steps < cfg.eval.max_steps:
+            while steps < max_steps:
                 steps += 1
 
                 data = raw_obs_to_tensor_obs(obs, task_emb, cfg)
@@ -130,7 +142,7 @@ def evaluate_one_task_success(cfg, algo, task_name):
     return success_rate
 
 
-def evaluate_success(cfg, algo, benchmark, task_names):
+def evaluate_success(cfg, algo, task_names, result_summary=None):
     """
     Evaluate the success rate for all task in task_ids.
     """

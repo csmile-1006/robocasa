@@ -55,9 +55,6 @@ def main(hydra_cfg):
     # cfg.bddl_folder = cfg.bddl_folder or get_libero_path("bddl_files")
     # cfg.init_states_folder = cfg.init_states_folder or get_libero_path("init_states")
 
-    # benchmark = get_benchmark(cfg.benchmark_name)(cfg.data.task_order_index)
-    # n_manip_tasks = benchmark.n_tasks
-
     n_manip_tasks = len(cfg.data.dataset_paths)
 
     # prepare datasets from the benchmark
@@ -112,11 +109,12 @@ def main(hydra_cfg):
             )
 
     n_tasks = n_manip_tasks // gsz  # number of lifelong learning tasks
+    task_names = [path.split('/')[-3] for path in cfg.data.dataset_paths]
     print("\n=================== Lifelong Benchmark Information  ===================")
-    print(f" Name: {'/'.join([path.split('/')[-3] for path in cfg.data.dataset_paths])}")
+    print(f" Name: {'/'.join(task_names)}")
     print(f" # Tasks: {n_manip_tasks // gsz}")
     for i in range(n_tasks):
-        print(f"    - Task {i+1}: {cfg.data.dataset_paths[i*gsz].split('/')[-3]}")
+        print(f"    - Task {i+1}: {task_names[i * gsz]}")
         # for j in range(gsz):
         #     print(f"        {benchmark.get_task(i*gsz+j).language}")
     print(" # demonstrations: " + " ".join(f"({x})" for x in n_demos))
@@ -182,16 +180,15 @@ def main(hydra_cfg):
         if cfg.eval.eval:
             L = evaluate_loss(cfg, algo, datasets)
             # TODO: add success evaluation with environment interaction
-            # S = evaluate_success(
-            #     cfg=cfg,
-            #     algo=algo,
-            #     benchmark=benchmark,
-            #     task_ids=list(range(n_manip_tasks)),
-            #     result_summary=result_summary if cfg.eval.save_sim_states else None,
-            # )
+            S = evaluate_success(
+                cfg=cfg,
+                algo=algo,
+                task_names=task_names,
+                result_summary=result_summary if cfg.eval.save_sim_states else None,
+            )
 
             result_summary["L_conf_mat"][-1] = L
-            # result_summary["S_conf_mat"][-1] = S
+            result_summary["S_conf_mat"][-1] = S
 
             if cfg.use_wandb:
                 wandb.run.summary["success_confusion_matrix"] = result_summary[
@@ -225,16 +222,15 @@ def main(hydra_cfg):
             if cfg.eval.eval:
                 L = evaluate_loss(cfg, algo, datasets[: i + 1])
                 t2 = time.time()
-                # S = evaluate_success(
-                #     cfg=cfg,
-                #     algo=algo,
-                #     benchmark=benchmark,
-                #     task_ids=list(range((i + 1) * gsz)),
-                #     result_summary=result_summary if cfg.eval.save_sim_states else None,
-                # )
+                S = evaluate_success(
+                    cfg=cfg,
+                    algo=algo,
+                    task_names=task_names[: (i + 1) * gsz],
+                    result_summary=result_summary if cfg.eval.save_sim_states else None,
+                )
                 t3 = time.time()
                 result_summary["L_conf_mat"][i][: i + 1] = L
-                # result_summary["S_conf_mat"][i][: i + 1] = S
+                result_summary["S_conf_mat"][i][: i + 1] = S
 
                 if cfg.use_wandb:
                     wandb.run.summary["success_confusion_matrix"] = result_summary[
@@ -253,7 +249,7 @@ def main(hydra_cfg):
                     + f"eval success time {(t3-t2)/60:.1f}"
                 )
                 print(("[Task %2d loss ] " + " %4.2f |" * (i + 1)) % (i, *L))
-                # print(("[Task %2d succ.] " + " %4.2f |" * (i + 1)) % (i, *S))
+                print(("[Task %2d succ.] " + " %4.2f |" * (i + 1)) % (i, *S))
                 torch.save(
                     result_summary, os.path.join(cfg.experiment_dir, "result.pt")
                 )
