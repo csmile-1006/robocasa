@@ -78,8 +78,8 @@ def create_robocasa_gym_env(
         "robot0_agentview_right",
         "robot0_eye_in_hand",
     ],
-    camera_widths=256,
-    camera_heights=256,
+    camera_widths=128,
+    camera_heights=128,
     render_onscreen=False,
     # robocasa-related configs
     obj_instance_split="B",

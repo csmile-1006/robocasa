@@ -1,5 +1,4 @@
 import gc
-import os
 import time
 
 import numpy as np
@@ -7,12 +6,11 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.tensor_utils as TensorUtils
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
-# from libero.libero.envs import OffScreenRenderEnv, SubprocVectorEnv, DummyVectorEnv
-from robocasa.lifelong.utils import *
+from robocasa.lifelong import utils
+from robocasa.utils.dataset_registry import MULTI_STAGE_TASK_DATASETS, SINGLE_STAGE_TASK_DATASETS
 from robocasa.utils.env_utils import load_robocasa_gym_env
-from robocasa.utils.dataset_registry import SINGLE_STAGE_TASK_DATASETS, MULTI_STAGE_TASK_DATASETS
 
 
 def get_env_horizon(env_name):
@@ -29,11 +27,11 @@ def raw_obs_to_tensor_obs(obs, task_emb, cfg):
     """
     Prepare the tensor observations as input for the algorithm.
     """
-    env_num = len(obs)
+    env_num = len(obs[list(obs.keys())[0]])
 
     data = {
         "obs": {},
-        "task_emb": task_emb.repeat(env_num, 1),
+        "task_emb": task_emb,
     }
 
     all_obs_keys = []
@@ -46,7 +44,7 @@ def raw_obs_to_tensor_obs(obs, task_emb, cfg):
         for obs_name in all_obs_keys:
             data["obs"][obs_name].append(
                 ObsUtils.process_obs(
-                    torch.from_numpy(obs[k][cfg.data.obs_key_mapping[obs_name]]),
+                    torch.from_numpy(obs[cfg.data.obs_key_mapping[obs_name]][k]),
                     obs_key=obs_name,
                 ).float()
             )
@@ -54,7 +52,7 @@ def raw_obs_to_tensor_obs(obs, task_emb, cfg):
     for key in data["obs"]:
         data["obs"][key] = torch.stack(data["obs"][key])
 
-    data = TensorUtils.map_tensor(data, lambda x: safe_device(x, device=cfg.device))
+    data = TensorUtils.map_tensor(data, lambda x: utils.safe_device(x, device=cfg.device))
     return data
 
 
@@ -65,7 +63,7 @@ def evaluate_one_task_success(cfg, algo, task_name):
                 evaluation, mainly for visualization and debugging purpose
     task_str:   the key to access sim_states dictionary
     """
-    with Timer() as t:
+    with utils.Timer() as t:
         if cfg.lifelong.algo == "PackNet":  # need preprocess weights for PackNet
             algo = algo.get_eval_algo(task_name)
 
@@ -77,51 +75,39 @@ def evaluate_one_task_success(cfg, algo, task_name):
 
         # Try to handle the frame buffer issue
         env_creation = False
-
         count = 0
         while not env_creation and count < 5:
             try:
                 env = load_robocasa_gym_env(env_name=task_name, n_envs=env_num)
-                # if env_num == 1:
-                #     env = DummyVectorEnv([lambda: OffScreenRenderEnv(**env_args) for _ in range(env_num)])
-                # else:
-                #     env = SubprocVectorEnv([lambda: OffScreenRenderEnv(**env_args) for _ in range(env_num)])
                 env_creation = True
             except Exception as e:
+                print(f"Failed to create environment: {e}")
                 time.sleep(5)
                 count += 1
         if count >= 5:
             raise RuntimeError("Failed to create environment")
-
         ### Evaluation loop
         # get fixed init states to control the experiment randomness
         # init_states_path = os.path.join(cfg.init_states_folder, task.problem_folder, task.init_states_file)
         # init_states = torch.load(init_states_path)
         num_success = 0
         max_steps = get_env_horizon(task_name)
-        for i in range(eval_loop_num):
-            env.reset()
-            task_emb = env.language_instruction
-            # indices = np.arange(i * env_num, (i + 1) * env_num) % init_states.shape[0]
-            # init_states_ = init_states[indices]
+        for i in trange(eval_loop_num, desc="Evaluating task", leave=False):
+            obs, _ = env.reset()
+            task_descs = list(env.get_attr("language_instruction"))
+            task_embs = utils.get_task_emb(cfg, task_descs)
 
             dones = [False] * env_num
             steps = 0
             algo.reset()
-            # obs = env.set_init_state(init_states_)
-
-            # dummy actions [env_num, 7] all zeros for initial physics simulation
-            # dummy = np.zeros((env_num, 7))
-            # for _ in range(5):
-            #     obs, _, _, _ = env.step(dummy)
-
+            pbar = tqdm(total=max_steps, desc="Evaluating task", leave=False)
             while steps < max_steps:
                 steps += 1
 
-                data = raw_obs_to_tensor_obs(obs, task_emb, cfg)
+                data = raw_obs_to_tensor_obs(obs, task_embs, cfg)
                 actions = algo.policy.get_action(data)
 
-                obs, reward, done, info = env.step(actions)
+                obs, reward, terminated, truncated, info = env.step(actions)
 
                 # check whether succeed
                 for k in range(env_num):
@@ -130,6 +116,8 @@ def evaluate_one_task_success(cfg, algo, task_name):
                 if all(dones):
                     break
 
+                pbar.update(1)
+            pbar.close()
             # a new form of success record
             for k in range(env_num):
                 if i * env_num + k < cfg.eval.n_eval:
@@ -187,11 +175,9 @@ def evaluate_loss(cfg, algo, datasets):
         )
         test_loss = 0
         for idx, data in tqdm(enumerate(dataloader), desc=f"Evaluating loss {i}", leave=False, total=len(dataloader)):
-            data = TensorUtils.map_tensor(data, lambda x: safe_device(x, device=cfg.device))
+            data = TensorUtils.map_tensor(data, lambda x: utils.safe_device(x, device=cfg.device))
             loss = algo.policy.compute_loss(data)
             test_loss += loss.item()
-            if idx >= 10:
-                break
         test_loss /= len(dataloader)
         losses.append(test_loss)
     return np.array(losses)

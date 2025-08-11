@@ -139,16 +139,12 @@ class Sequential(nn.Module, metaclass=AlgoMeta):
                 for idx, data in tqdm(enumerate(train_dataloader), desc="Training", leave=False, total=len(train_dataloader)):
                     loss = self.observe(data)
                     training_loss += loss
-                    if idx >= 10:
-                        break
                 training_loss /= len(train_dataloader)
             else:  # just evaluate the zero-shot performance on 0-th epoch
                 training_loss = 0.0
                 for idx, data in tqdm(enumerate(train_dataloader), desc="Evaluation", leave=False, total=len(train_dataloader)):
                     loss = self.eval_observe(data)
                     training_loss += loss
-                    if idx >= 10:
-                        break
                 training_loss /= len(train_dataloader)
             t1 = time.time()
 

@@ -1,7 +1,7 @@
 # observation related
 dataset_paths:
-  - "/home/changyeon/workspace/robocasa/datasets/v0.1/single_stage/kitchen_doors/CloseDoubleDoor/2024-04-29/demo_gentex_im128_randcams.hdf5"
-  - "/home/changyeon/workspace/robocasa/datasets/v0.1/single_stage/kitchen_doors/CloseSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5"
+  - "/home/changyeon/workspace/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5"
+  - "/home/changyeon/workspace/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams.hdf5"
 data_modality:
   - "image"
   - "proprio"

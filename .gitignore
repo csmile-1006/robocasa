@@ -146,3 +146,7 @@ robocasa/models/assets/generative_textures
 
 # CL related things
 bert/
+
+
+# vscode
+.vscode/
