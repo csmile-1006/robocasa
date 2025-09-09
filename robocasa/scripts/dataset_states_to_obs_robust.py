@@ -64,7 +64,7 @@ class RobustMultiprocessingManager:
         
         # Progress tracking
         self.last_progress_time = multiprocessing.Value('d', time.time())
-        self.processed_items = multiprocessing.Value('i', 0)
+        self.writer_processed = multiprocessing.Value('i', 0)  # Writer's actual progress
         
     def setup_shared_resources(self, num_demos: int):
         """Set up shared multiprocessing resources."""
@@ -81,7 +81,7 @@ class RobustMultiprocessingManager:
     def calculate_adaptive_timeout(self) -> int:
         """Calculate adaptive timeout based on work remaining."""
         with self.lock:
-            remaining_items = max(0, self.total_work_items - self.processed_items.value)
+            remaining_items = max(0, self.total_work_items - self.writer_processed.value)
             if remaining_items == 0:
                 return self.min_timeout
             
@@ -92,11 +92,6 @@ class RobustMultiprocessingManager:
             print(f"Adaptive timeout: {adaptive_timeout}s (remaining items: {remaining_items})")
             return adaptive_timeout
     
-    def update_progress(self, items_processed: int = 1):
-        """Update progress tracking."""
-        with self.lock:
-            self.processed_items.value += items_processed
-            self.last_progress_time.value = time.time()
     
     def check_heartbeat(self) -> bool:
         """Check if processes are making progress."""
@@ -322,8 +317,7 @@ def worker_process(
                     print(f"Worker {process_id}: Failed to put result for episode {ep}")
                     continue
                 
-                # Update progress and send heartbeat
-                manager.update_progress(1)
+                # Send heartbeat
                 safe_queue_put(manager.queues['heartbeat'], [process_id, "completed", time.time(), ep])
                     
                 processed_count += 1
@@ -451,6 +445,8 @@ def writer_process(
                 # Update shared variables
                 with manager.lock:
                     manager.shared_vars['total_samples'].value += traj["actions"].shape[0]
+                    manager.writer_processed.value += 1  # Update writer progress
+                    manager.last_progress_time.value = time.time()  # Update heartbeat
                 
                 num_processed += 1
                 elapsed = time.time() - start_time
@@ -598,7 +594,7 @@ def dataset_states_to_obs_robust(args):
 
             # If all episodes have been processed, break out of the loop
             with manager.lock:
-                processed = manager.processed_items.value
+                processed = manager.writer_processed.value
             if processed >= num_demos:
                 print(f"All {num_demos} episodes processed. Exiting progress loop.")
                 break
@@ -611,7 +607,7 @@ def dataset_states_to_obs_robust(args):
                     alive_processes = [p for p in manager.processes if p.is_alive()]
                     if len(alive_processes) > 0:
                         print(f"Found {len(alive_processes)} alive processes, continuing...")
-                        manager.update_progress(0)  # Reset heartbeat
+                        manager.last_progress_time.value = time.time()  # Reset heartbeat
                     else:
                         print("No alive processes found, shutting down...")
                         manager.shutdown_event.set()
@@ -621,7 +617,7 @@ def dataset_states_to_obs_robust(args):
             # Report progress every 60 seconds
             if current_time - last_progress_report > 60:
                 with manager.lock:
-                    processed = manager.processed_items.value
+                    processed = manager.writer_processed.value
                     remaining = max(0, num_demos - processed)
                     elapsed = current_time - start_time
                     rate = processed / elapsed if elapsed > 0 else 0
